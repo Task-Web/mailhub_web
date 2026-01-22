@@ -1,0 +1,26 @@
+services:
+  mailhub_web_backend:
+    build:
+      context: ./backend
+    environment:
+      - API_PREFIX=/api
+      - ENV=production
+    expose:
+      - "8000"
+    networks:
+      - web
+
+  mailhub_web_frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE: /api
+    expose:
+      - "80"
+    networks:
+      - web
+    labels:
+      caddy: "mailhub.${HOST_SUFFIX:-localhost}"
+      caddy.0_reverse_proxy: "/api* mailhub_web_backend:8000"
+      caddy.1_reverse_proxy: "/mcp* mailhub_web_backend:8000"
+      caddy.2_reverse_proxy: "mailhub_web_frontend:80"
