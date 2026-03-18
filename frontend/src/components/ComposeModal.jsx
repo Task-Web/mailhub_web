@@ -28,6 +28,7 @@ const ComposeModal = () => {
   const [isDragging, setIsDragging] = useState(false);
 
   const fileInputRef = useRef(null);
+  const dragCounterRef = useRef(0);
 
   useEffect(() => {
     if (!isComposeOpen) return undefined;
@@ -89,21 +90,33 @@ const ComposeModal = () => {
     setAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
   };
 
+  const handleDragEnter = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragCounterRef.current += 1;
+    if (event.dataTransfer.types.includes("Files")) {
+      setIsDragging(true);
+    }
+  };
+
   const handleDragOver = (event) => {
     event.preventDefault();
     event.stopPropagation();
-    setIsDragging(true);
   };
 
   const handleDragLeave = (event) => {
     event.preventDefault();
     event.stopPropagation();
-    setIsDragging(false);
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
   };
 
   const handleDrop = async (event) => {
     event.preventDefault();
     event.stopPropagation();
+    dragCounterRef.current = 0;
     setIsDragging(false);
 
     const files = Array.from(event.dataTransfer.files);
@@ -118,14 +131,15 @@ const ComposeModal = () => {
   };
 
   const modalClasses = isMaximized
-    ? "fixed inset-4 z-50 flex flex-col rounded-lg bg-white shadow-2xl"
-    : `fixed bottom-0 right-20 z-50 flex flex-col rounded-t-lg border border-gray-300 bg-white shadow-xl transition-all duration-200 ${
+    ? "fixed inset-4 z-50 flex flex-col rounded-lg bg-white shadow-2xl relative"
+    : `fixed bottom-0 right-20 z-50 flex flex-col rounded-t-lg border border-gray-300 bg-white shadow-xl transition-all duration-200 relative ${
         isMinimized ? "h-12 w-64" : "h-[500px] w-[500px]"
       }`;
 
   return (
     <div
       className={modalClasses}
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -170,8 +184,11 @@ const ComposeModal = () => {
       {!isMinimized && (
         <>
           {isDragging && (
-            <div className="bg-blue-50 px-4 py-2 text-center text-sm text-blue-600 border-b border-blue-200">
-              Drop files to attach
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-blue-50/80 backdrop-blur-sm border-2 border-dashed border-blue-400 pointer-events-none">
+              <div className="flex flex-col items-center gap-2 text-blue-600">
+                <Paperclip size={32} />
+                <span className="text-sm font-medium">Drop files to attach</span>
+              </div>
             </div>
           )}
           <div className="flex flex-1 flex-col overflow-y-auto">

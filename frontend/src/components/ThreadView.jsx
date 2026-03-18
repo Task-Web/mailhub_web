@@ -247,6 +247,7 @@ const ThreadView = () => {
   const [isDragging, setIsDragging] = useState(false);
   const replyRef = useRef(null);
   const replyFileInputRef = useRef(null);
+  const dragCounterRef = useRef(0);
 
   const threadEmails = useMemo(
     () =>
@@ -293,25 +294,39 @@ const ThreadView = () => {
     setReplyAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
   };
 
+  const handleDragEnter = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragCounterRef.current += 1;
+    if (event.dataTransfer.types.includes("Files")) {
+      setIsDragging(true);
+    }
+  };
+
   const handleDragOver = (event) => {
     event.preventDefault();
     event.stopPropagation();
-    setIsDragging(true);
   };
 
   const handleDragLeave = (event) => {
     event.preventDefault();
     event.stopPropagation();
-    setIsDragging(false);
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
   };
 
   const handleDrop = async (event) => {
     event.preventDefault();
     event.stopPropagation();
+    dragCounterRef.current = 0;
     setIsDragging(false);
 
     const files = Array.from(event.dataTransfer.files);
     if (files.length === 0) return;
+
+    setIsReplying(true);
 
     try {
       const uploaded = await uploadAttachments(files);
@@ -502,24 +517,35 @@ const ThreadView = () => {
           <img src={state.user.avatar} alt="" className="h-10 w-10 rounded-full" />
           <div
             className={cn(
-              "flex-1 rounded-lg border border-gray-300 shadow-sm transition-all",
+              "relative flex-1 rounded-lg border border-gray-300 shadow-sm transition-all",
               isDragging ? "border-blue-400 border-2" : "",
               isReplying ? "h-auto" : "h-12 overflow-hidden"
             )}
             onClick={handleReplyBoxClick}
+            onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
             {!isReplying ? (
               <div className="flex cursor-text items-center gap-2 p-3 text-gray-500">
-                <Reply size={18} /> Reply
+                {isDragging ? (
+                  <div className="flex items-center gap-2 text-blue-600">
+                    <Paperclip size={18} />
+                    <span className="text-sm font-medium">Drop files to attach</span>
+                  </div>
+                ) : (
+                  <><Reply size={18} /> Reply</>
+                )}
               </div>
             ) : (
               <div className="p-4">
                 {isDragging && (
-                  <div className="mb-2 bg-blue-50 px-3 py-2 text-center text-sm text-blue-600 rounded border border-blue-200">
-                    Drop files to attach
+                  <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-blue-50/80 backdrop-blur-sm border-2 border-dashed border-blue-400 pointer-events-none">
+                    <div className="flex flex-col items-center gap-2 text-blue-600">
+                      <Paperclip size={24} />
+                      <span className="text-sm font-medium">Drop files to attach</span>
+                    </div>
                   </div>
                 )}
                 <div className="mb-2 flex items-center gap-2 text-sm text-gray-500">

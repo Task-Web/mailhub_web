@@ -61,9 +61,9 @@ const EmailRow = ({ email, isSelected, toggleSelect, labelMap }) => {
             email.important ? "text-yellow-500" : "text-gray-300 hover:text-gray-400"
           )}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          <svg width="20" height="20" viewBox="0 0 24 24">
             <path
-              d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
+              d="M12 2L16 12L12 22L8 12L12 2Z"
               fill={email.important ? "#F4B400" : "none"}
               stroke="currentColor"
               strokeWidth="2"
