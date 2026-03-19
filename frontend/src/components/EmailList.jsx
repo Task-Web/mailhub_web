@@ -8,6 +8,7 @@ import {
   MoreVertical,
   Square,
   Star,
+  AlertCircle,
   Tag,
   Trash2,
 } from "lucide-react";
@@ -51,27 +52,10 @@ const EmailRow = ({ email, isSelected, toggleSelect, labelMap }) => {
         </button>
       </div>
 
-      <div className="mr-2 flex-shrink-0">
-        <button
-          onClick={(event) => {
-            event.stopPropagation();
-            toggleImportant(email.id);
-          }}
-          className={cn(
-            email.important ? "text-yellow-500" : "text-gray-300 hover:text-gray-400"
-          )}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24">
-            <path
-              d="M12 2L16 12L12 22L8 12L12 2Z"
-              fill={email.important ? "#F4B400" : "none"}
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+      <div className="mr-2 flex-shrink-0 w-5">
+        {email.important && (
+          <AlertCircle size={20} className="text-red-500" fill="red" stroke="white" />
+        )}
       </div>
 
       <div className={cn("w-48 truncate pr-4 flex-shrink-0", !email.read && "font-bold text-black")}>
