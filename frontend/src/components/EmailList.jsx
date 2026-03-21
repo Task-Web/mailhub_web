@@ -8,7 +8,6 @@ import {
   MoreVertical,
   Square,
   Star,
-  AlertCircle,
   Tag,
   Trash2,
 } from "lucide-react";
@@ -54,7 +53,10 @@ const EmailRow = ({ email, isSelected, toggleSelect, labelMap }) => {
 
       <div className="mr-2 flex-shrink-0 w-5">
         {email.important && (
-          <AlertCircle size={20} className="text-red-500" fill="red" stroke="white" />
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 5L12 15" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" />
+              <circle cx="12" cy="20" r="1.5" fill="#ef4444" />
+            </svg>
         )}
       </div>
 

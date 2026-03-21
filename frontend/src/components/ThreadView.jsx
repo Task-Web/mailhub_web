@@ -216,6 +216,22 @@ const EmailBody = ({ html }) => {
     resizeIframe();
   }, [srcDoc, resizeIframe]);
 
+  const handleLoad = useCallback(() => {
+    resizeIframe();
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) return;
+      doc.addEventListener("toggle", () => {
+        // Small delay to let the browser layout the expanded content.
+        requestAnimationFrame(resizeIframe);
+      }, true);
+    } catch (err) {
+      // Ignore cross-origin access errors.
+    }
+  }, [resizeIframe]);
+
   return (
     <iframe
       ref={iframeRef}
@@ -223,7 +239,7 @@ const EmailBody = ({ html }) => {
       srcDoc={srcDoc}
       className="block w-full border-0"
       style={{ height }}
-      onLoad={resizeIframe}
+      onLoad={handleLoad}
       scrolling="no"
     />
   );
@@ -245,6 +261,7 @@ const ThreadView = () => {
   const [replyAttachments, setReplyAttachments] = useState([]);
   const [isReplying, setIsReplying] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [expandedEmails, setExpandedEmails] = useState(new Set());
   const replyRef = useRef(null);
   const replyFileInputRef = useRef(null);
   const dragCounterRef = useRef(0);
@@ -269,6 +286,23 @@ const ThreadView = () => {
       bulkUpdateEmails(unreadIds, { read: true });
     }
   }, [bulkUpdateEmails, threadEmails]);
+
+  useEffect(() => {
+    if (!threadEmails.length) return;
+    setExpandedEmails(new Set([threadEmails[threadEmails.length - 1].id]));
+  }, [threadId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleEmailExpanded = (emailId) => {
+    setExpandedEmails((prev) => {
+      const next = new Set(prev);
+      if (next.has(emailId)) {
+        next.delete(emailId);
+      } else {
+        next.add(emailId);
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (isReplying && replyRef.current) {
@@ -366,12 +400,23 @@ const ThreadView = () => {
     .replace("-", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
-  const handleReply = () => {
+  const handleReply = async () => {
     if (!replyBody.trim() && replyAttachments.length === 0) return;
-    replyToEmail(threadId, replyBody, false, replyAttachments);
+    const prevCount = threadEmails.length;
+    await replyToEmail(threadId, replyBody, false, replyAttachments);
     clearReplyComposer();
     setIsReplying(false);
   };
+
+  // Auto-expand newly added emails (e.g. after sending a reply).
+  const prevCountRef = useRef(threadEmails.length);
+  useEffect(() => {
+    if (threadEmails.length > prevCountRef.current) {
+      const newLast = threadEmails[threadEmails.length - 1];
+      setExpandedEmails((prev) => new Set([...prev, newLast.id]));
+    }
+    prevCountRef.current = threadEmails.length;
+  }, [threadEmails]);
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden rounded-tl-2xl bg-white shadow-sm">
@@ -425,92 +470,112 @@ const ThreadView = () => {
         </div>
 
         <div className="space-y-4">
-          {threadEmails.map((email, index) => (
-            <div
-              key={email.id}
-              className={cn(
-                "overflow-hidden rounded-lg border border-gray-200",
-                index === threadEmails.length - 1 ? "bg-white" : "bg-gray-50"
-              )}
-            >
-              <div className="flex cursor-pointer items-start gap-4 p-4">
-                <img src={email.from.avatar} alt="" className="h-10 w-10 rounded-full" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-gray-900">{email.from.name}</span>
-                    <div className="flex items-center gap-4 text-sm text-gray-500">
-                      <span>{formatDate(email.timestamp)}</span>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          toggleStar(email.id);
-                        }}
-                      >
-                        <Star
-                          size={18}
-                          className={cn(email.starred ? "text-yellow-400 fill-current" : "text-gray-400")}
-                        />
-                      </button>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setIsReplying(true);
-                        }}
-                      >
-                        <CornerUpLeft size={18} />
-                      </button>
-                      <MoreVertical size={18} />
-                    </div>
-                  </div>
-                  <div className="truncate text-sm text-gray-500">
-                    to {(email.to || []).map((recipient) => recipient.name).join(", ")}
-                  </div>
-                </div>
-              </div>
-
-              <div className="px-16 pb-8">
-                <EmailBody html={email.body} />
-              </div>
-
-              {email.attachments && email.attachments.length > 0 && (
-                <div className="flex gap-4 px-16 pb-8">
-                  {email.attachments.map((att) => {
-                    const attachmentUrl = resolveAttachmentUrl(att.url);
-                    return (
-                      <button
-                        key={att.id}
-                        type="button"
-                        onClick={() => triggerDownload(attachmentUrl, att.name)}
-                        className="w-48 rounded border p-2 text-left hover:bg-gray-50"
-                      >
-                        {isImageAttachment(att) ? (
-                          <div className="mb-2 h-24 overflow-hidden rounded bg-gray-100">
-                            {attachmentUrl ? (
-                              <img
-                                src={attachmentUrl}
-                                alt={att.name || "attachment"}
-                                className="h-full w-full object-cover"
+          {threadEmails.map((email, index) => {
+            const isExpanded = expandedEmails.has(email.id);
+            return (
+              <div
+                key={email.id}
+                className={cn(
+                  "overflow-hidden rounded-lg border border-gray-200",
+                  index === threadEmails.length - 1 ? "bg-white" : "bg-gray-50"
+                )}
+              >
+                <div
+                  className="flex cursor-pointer items-start gap-4 p-4"
+                  onClick={() => toggleEmailExpanded(email.id)}
+                >
+                  <img src={email.from.avatar} alt="" className="h-10 w-10 rounded-full" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-gray-900">{email.from.name}</span>
+                      <div className="flex items-center gap-4 text-sm text-gray-500">
+                        <span>{formatDate(email.timestamp)}</span>
+                        {isExpanded && (
+                          <>
+                            <button
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleStar(email.id);
+                              }}
+                            >
+                              <Star
+                                size={18}
+                                className={cn(email.starred ? "text-yellow-400 fill-current" : "text-gray-400")}
                               />
-                            ) : (
-                              <div className="flex h-full items-center justify-center text-xs text-gray-400">
-                                No preview
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="mb-2 flex h-24 items-center justify-center rounded bg-gray-100">
-                            <FileText size={32} className="text-gray-400" />
-                          </div>
+                            </button>
+                            <button
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setIsReplying(true);
+                              }}
+                            >
+                              <CornerUpLeft size={18} />
+                            </button>
+                            <MoreVertical size={18} />
+                          </>
                         )}
-                        <div className="truncate text-sm font-medium">{att.name}</div>
-                        <div className="text-xs text-gray-500">{att.size || "2.4 MB"}</div>
-                      </button>
-                    );
-                  })}
+                      </div>
+                    </div>
+                    {isExpanded ? (
+                      <div className="truncate text-sm text-gray-500">
+                        to {(email.to || []).map((recipient) => recipient.name).join(", ")}
+                      </div>
+                    ) : (
+                      <div className="truncate text-sm text-gray-500">
+                        {email.snippet || email.body?.replace(/<[^>]*>/g, "").slice(0, 100)}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
+
+                {isExpanded && (
+                  <>
+                    <div className="px-16 pb-8">
+                      <EmailBody html={email.body} />
+                    </div>
+
+                    {email.attachments && email.attachments.length > 0 && (
+                      <div className="flex gap-4 px-16 pb-8">
+                        {email.attachments.map((att) => {
+                          const attachmentUrl = resolveAttachmentUrl(att.url);
+                          return (
+                            <button
+                              key={att.id}
+                              type="button"
+                              onClick={() => triggerDownload(attachmentUrl, att.name)}
+                              className="w-48 rounded border p-2 text-left hover:bg-gray-50"
+                            >
+                              {isImageAttachment(att) ? (
+                                <div className="mb-2 h-24 overflow-hidden rounded bg-gray-100">
+                                  {attachmentUrl ? (
+                                    <img
+                                      src={attachmentUrl}
+                                      alt={att.name || "attachment"}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-full items-center justify-center text-xs text-gray-400">
+                                      No preview
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="mb-2 flex h-24 items-center justify-center rounded bg-gray-100">
+                                  <FileText size={32} className="text-gray-400" />
+                                </div>
+                              )}
+                              <div className="truncate text-sm font-medium">{att.name}</div>
+                              <div className="text-xs text-gray-500">{att.size || "2.4 MB"}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         <div className="mt-8 flex items-start gap-4">

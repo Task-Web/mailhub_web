@@ -25,7 +25,16 @@ def generate_id() -> str:
 
 
 def build_snippet(body: str, limit: int = 100) -> str:
-    cleaned = _TAG_RE.sub("", body or "")
+    text = body or ""
+    # Strip quoted reply section before extracting snippet.
+    text = re.sub(
+        r'<div\s+class="gmail_quote".*',
+        "",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    cleaned = _TAG_RE.sub("", text)
+    cleaned = re.sub(r"&[a-zA-Z0-9#]+;", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned[:limit]
 
@@ -446,6 +455,56 @@ def build_outgoing_email(
     )
 
 
+_QUOTE_RE = re.compile(
+    r'<div\s+class="gmail_quote".*?</div>\s*$',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _strip_existing_quote(html: str) -> str:
+    """Remove the trailing gmail_quote block so quotes don't nest."""
+    return _QUOTE_RE.sub("", html).rstrip()
+
+
+def _build_body_with_quote(body: str, source_email: Dict[str, Any]) -> str:
+    """Wrap the user's reply with a collapsed quote of the source email."""
+    source_from = source_email.get("from") or {}
+    sender_name = source_from.get("name", "")
+    sender_email = source_from.get("email", "")
+    raw_ts = source_email.get("timestamp", "")
+    try:
+        dt = datetime.fromisoformat(raw_ts)
+        timestamp = dt.strftime("%a, %b %d, %Y at %I:%M %p")
+    except (ValueError, TypeError):
+        timestamp = raw_ts
+    source_body = _strip_existing_quote(source_email.get("body") or "")
+
+    if not source_body:
+        return body
+
+    return (
+        f"{body}"
+        f'<br><div class="gmail_quote">'
+        f"<details>"
+        f'<summary style="cursor:pointer;list-style:none;display:inline-block;'
+        f'margin:4px 0 8px;user-select:none">'
+        f'<span style="display:inline-flex;align-items:center;justify-content:center;'
+        f'width:36px;height:18px;border:1px solid #ddd;border-radius:8px;'
+        f'background:#f1f3f4;font-size:11px;letter-spacing:2px;color:#5f6368;'
+        f'line-height:1;transition:background .15s"'
+        f' onmouseover="this.style.background=\'#e0e0e0\'"'
+        f' onmouseout="this.style.background=\'#f1f3f4\'">'
+        f"&bull;&bull;&bull;</span></summary>"
+        f'<div style="margin-top:8px;color:#5f6368;font-size:13px">'
+        f"On {timestamp} {sender_name} &lt;{sender_email}&gt; wrote:</div>"
+        f'<blockquote style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">'
+        f"{source_body}"
+        f"</blockquote>"
+        f"</details>"
+        f"</div>"
+    )
+
+
 def build_reply_email(
     user: Dict[str, str],
     source_email: Dict[str, Any],
@@ -468,6 +527,8 @@ def build_reply_email(
     if not subject.lower().startswith("re:"):
         subject = f"Re: {subject}"
 
+    reply_body = _build_body_with_quote(body, source_email)
+
     return build_email(
         email_id=generate_id(),
         thread_id=source_email.get("threadId") or generate_id(),
@@ -476,7 +537,7 @@ def build_reply_email(
         cc=[],
         bcc=[],
         subject=subject,
-        body=body,
+        body=reply_body,
         read=True,
         starred=False,
         important=False,
