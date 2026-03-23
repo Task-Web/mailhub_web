@@ -151,6 +151,13 @@ const buildEmailDocument = (html) => {
       });
     });
 
+    if (!doc.querySelector("base[target]")) {
+      const base = doc.createElement("base");
+      base.setAttribute("target", "_blank");
+      base.setAttribute("rel", "noopener noreferrer");
+      (doc.head || doc.documentElement).prepend(base);
+    }
+
     doc.querySelectorAll("[style]").forEach((element) => {
       const style = element.getAttribute("style");
       const next = rewriteCssUrls(style);
@@ -198,6 +205,9 @@ const EmailBody = ({ html }) => {
     try {
       const doc = iframe.contentDocument;
       if (!doc) return;
+      // Reset height first so scrollHeight reflects actual content size,
+      // not the previous (potentially larger) viewport.
+      iframe.style.height = "0px";
       const body = doc.body;
       const documentElement = doc.documentElement;
       const nextHeight = Math.max(
