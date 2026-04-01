@@ -73,6 +73,38 @@ All other types render a generic file icon; clicking downloads/opens the file.
 - `name` (string)
 - `color` (string): Hex color.
 
+## Dynamic events (optional)
+
+When the state is initialized via `PUT /api/state`, two optional top-level keys
+in `data` enable dynamic, time-based or action-triggered email delivery.  These
+keys are **stripped** from the stored state so the frontend never sees them.
+
+### `time_data` (TimedEmail[])
+Emails that arrive automatically after a delay.  Each item is a standard Email
+object with one extra field:
+
+- `arrive_after_s` (number): Seconds after state init when this email appears
+  in the user's inbox.
+
+### `action_data` (ActionRule[])
+Rules that fire *once* when the user sends or replies to an email matching
+certain conditions.
+
+- `trigger` (object):
+  - `to_email` (string): Recipient email to watch (case-insensitive).
+  - `keywords` (string[][]): List of keyword-groups (**OR-of-ANDs**).
+    Each group is a list of strings that must ALL appear in subject + body;
+    the trigger fires if ANY group is fully matched.
+    Example: `[["meeting","schedule"],["45 min"]]` means
+    `(meeting AND schedule) OR (45 min)`.
+- `delay_s` (number): Seconds to wait after trigger match before injecting.
+- `email` (Email): The email to inject into the inbox.
+
+### Backward compatibility
+If neither `time_data` nor `action_data` is present in the state, the system
+behaves exactly as before — no background tasks are started.
+
+
 ## Full example (UserState)
 ```json
 {
