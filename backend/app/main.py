@@ -53,9 +53,11 @@ from .mail_schemas import (
 )
 from .schemas import InfoResponse, StatePatchRequest, StateRequest, StateResponse
 from .state_store import StateStore
+from . import dynamic_events
 
 settings = get_settings()
 store = StateStore()
+dynamic_events.set_store(store)
 
 tags_metadata = [
     {"name": "state", "description": "Manage per-user experiment state"},
@@ -227,10 +229,13 @@ async def get_state(user_id: str = Depends(get_user_id)) -> StateResponse:
     summary="Replace state",
 )
 async def put_state(payload: StateRequest, user_id: str = Depends(get_user_id)) -> StateResponse:
+    time_data, action_data = dynamic_events.extract_dynamic_fields(payload.data)
     next_state = {"data": payload.data, "note": payload.note}
     if payload.meta is not None:
         next_state["meta"] = payload.meta
     state = await store.replace_state(user_id, next_state)
+    if time_data or action_data:
+        dynamic_events.start_dynamic_events(user_id, time_data, action_data)
     return StateResponse(user_id=user_id, state=state)
 
 
@@ -283,9 +288,12 @@ async def get_mail_state(user_id: str = Depends(get_user_id)) -> MailStateRespon
     summary="Send a new message",
 )
 async def send_mail(payload: MailSendRequest, user_id: str = Depends(get_user_id)) -> MailStateResponse:
+    outgoing_ref: Dict[str, Any] = {}
+
     def updater(existing_state):
         mail_state, _ = ensure_mail_state(existing_state.data, user_id)
         outgoing = build_outgoing_email(mail_state["user"], payload.model_dump())
+        outgoing_ref.update(outgoing)
         mail_state["emails"].insert(0, outgoing)
         if payload.draft_id:
             mail_state["emails"] = [
@@ -296,6 +304,7 @@ async def send_mail(payload: MailSendRequest, user_id: str = Depends(get_user_id
         return True
 
     state = await store.update_state(user_id, updater)
+    await dynamic_events.check_action_triggers(user_id, outgoing_ref)
     return MailStateResponse(user_id=user_id, mail=state.data)
 
 
@@ -306,6 +315,8 @@ async def send_mail(payload: MailSendRequest, user_id: str = Depends(get_user_id
     summary="Reply to an existing thread",
 )
 async def reply_mail(payload: MailReplyRequest, user_id: str = Depends(get_user_id)) -> MailStateResponse:
+    reply_ref: Dict[str, Any] = {}
+
     def updater(existing_state):
         mail_state, _ = ensure_mail_state(existing_state.data, user_id)
         thread_emails = [
@@ -333,12 +344,14 @@ async def reply_mail(payload: MailReplyRequest, user_id: str = Depends(get_user_
             payload.reply_all,
             payload.attachments,
         )
+        reply_ref.update(reply_email)
         mail_state["emails"].append(reply_email)
         existing_state.data = mail_state
         existing_state.note = "Mail: reply sent"
         return True
 
     state = await store.update_state(user_id, updater)
+    await dynamic_events.check_action_triggers(user_id, reply_ref)
     return MailStateResponse(user_id=user_id, mail=state.data)
 
 
@@ -708,7 +721,10 @@ async def mcp_replace_state(
     user_cookie: Optional[str] = None,
 ) -> Dict[str, Any]:
     user_id = _resolve_user_cookie(user_cookie)
+    time_data, action_data = dynamic_events.extract_dynamic_fields(data)
     state = await store.replace_state(user_id, {"data": data, "note": note})
+    if time_data or action_data:
+        dynamic_events.start_dynamic_events(user_id, time_data, action_data)
     return {"user_id": user_id, "state": state.model_dump()}
 
 
@@ -769,6 +785,7 @@ async def mcp_mail_send(
     user_cookie: Optional[str] = None,
 ) -> Dict[str, Any]:
     user_id = _resolve_user_cookie(user_cookie)
+    outgoing_ref: Dict[str, Any] = {}
 
     payload = {
         "to": to,
@@ -783,6 +800,7 @@ async def mcp_mail_send(
     def updater(existing_state):
         mail_state, _ = ensure_mail_state(existing_state.data, user_id)
         outgoing = build_outgoing_email(mail_state["user"], payload)
+        outgoing_ref.update(outgoing)
         mail_state["emails"].insert(0, outgoing)
         if draft_id:
             mail_state["emails"] = [
@@ -793,6 +811,7 @@ async def mcp_mail_send(
         return True
 
     state = await store.update_state(user_id, updater)
+    await dynamic_events.check_action_triggers(user_id, outgoing_ref)
     return {"user_id": user_id, "mail": state.model_dump()["data"]}
 
 
@@ -808,6 +827,7 @@ async def mcp_mail_reply(
     user_cookie: Optional[str] = None,
 ) -> Dict[str, Any]:
     user_id = _resolve_user_cookie(user_cookie)
+    reply_ref: Dict[str, Any] = {}
 
     def updater(existing_state):
         mail_state, _ = ensure_mail_state(existing_state.data, user_id)
@@ -830,12 +850,14 @@ async def mcp_mail_reply(
             source_email = max(thread_emails, key=lambda email: parse_ts(email.get("timestamp")))
 
         reply_email = build_reply_email(mail_state["user"], source_email, body, reply_all)
+        reply_ref.update(reply_email)
         mail_state["emails"].append(reply_email)
         existing_state.data = mail_state
         existing_state.note = "Mail: reply sent"
         return True
 
     state = await store.update_state(user_id, updater)
+    await dynamic_events.check_action_triggers(user_id, reply_ref)
     return {"user_id": user_id, "mail": state.model_dump()["data"]}
 
 
