@@ -7,6 +7,8 @@ services:
       - ENV=production
     expose:
       - "8000"
+    volumes:
+      - ./STATE.md:/app/STATE.md:ro
 
   frontend:
     build:
