@@ -7,6 +7,7 @@ import EmailList from "./components/EmailList";
 import ThreadView from "./components/ThreadView";
 import ComposeModal from "./components/ComposeModal";
 import ErrorBoundary from "./components/ErrorBoundary";
+import NotificationToast from "./components/NotificationToast";
 
 const COOKIE_NAME = import.meta.env.VITE_COOKIE_NAME || "user_id";
 const COOKIE_MAX_AGE = Number(import.meta.env.VITE_COOKIE_MAX_AGE || 60 * 60 * 24 * 30);
@@ -86,6 +87,7 @@ const Layout = ({ children }) => (
     </div>
     <ComposeModal />
     <KeyboardShortcuts />
+    <NotificationToast />
   </div>
 );
 

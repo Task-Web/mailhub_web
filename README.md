@@ -35,6 +35,7 @@ Open http://localhost (nginx reverse proxy). It routes `/api` and `/mcp` to the 
 - MCP server (Streamable HTTP) mounted at `/mcp` mirroring the REST operations; accepts `user_cookie` to target a specific state, plus mail-specific tools.
 - You can pin identity via querystring `?cookie=your-id` on any API call; the backend will also set that as the response cookie.
 - MailHub-style frontend UI built with Tailwind CSS.
+- **New-email notification toasts** – opt-in via `"enable_notifications": "on"` in state data; the frontend polls for inbox changes every 5 seconds and displays a slide-in toast when new mail arrives. Disabled by default for backward compatibility.
 - Mail state seeded with sample conversations, labels, and attachments (see `STATE.md`).
 - File uploads stored under `backend/files/<user_id>/` and served from `/api/files`.
 - Auto-generated OpenAPI docs at `/api/docs` and curated `API.md`.
