@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../apiClient";
 
 const StoreContext = createContext();
@@ -31,11 +31,17 @@ export const StoreProvider = ({ children }) => {
   const [activeCategory, setActiveCategory] = useState("primary");
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const knownEmailIds = useRef(new Set());
+  const notificationsEnabled = useRef(false);
 
   const applyMailResponse = useCallback((response) => {
     if (!response || !response.mail) return;
     setState(response.mail);
     setUserId(response.user_id || null);
+    if (response.enable_notifications !== undefined) {
+      notificationsEnabled.current = !!response.enable_notifications;
+    }
   }, []);
 
   const runAction = useCallback(async (action, after) => {
@@ -68,6 +74,54 @@ export const StoreProvider = ({ children }) => {
   useEffect(() => {
     refreshState();
   }, [refreshState]);
+
+  // Poll for new emails every 5 seconds (only when notifications are enabled)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (!notificationsEnabled.current) return;
+      try {
+        const response = await api.getMailState();
+        if (!response || !response.mail) return;
+        const emails = response.mail.emails || [];
+        const inboxEmails = emails.filter((e) => e.folder === "inbox");
+        const newEmails = [];
+        inboxEmails.forEach((e) => {
+          if (!knownEmailIds.current.has(e.id)) {
+            knownEmailIds.current.add(e.id);
+            newEmails.push(e);
+          }
+        });
+        if (newEmails.length > 0) {
+          setNotifications((prev) => [
+            ...prev,
+            ...newEmails.map((e) => ({
+              id: e.id,
+              from: e.from?.name || e.from?.email || "Unknown",
+              subject: e.subject || "(no subject)",
+              snippet: e.snippet || "",
+              timestamp: Date.now(),
+            })),
+          ]);
+        }
+        // Sync state so UI updates with new emails
+        applyMailResponse(response);
+      } catch (_) {
+        // Silently ignore poll errors
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [applyMailResponse]);
+
+  // Seed known IDs from initial load
+  useEffect(() => {
+    if (state.emails && state.emails.length > 0 && knownEmailIds.current.size === 0) {
+      state.emails.forEach((e) => knownEmailIds.current.add(e.id));
+    }
+  }, [state.emails]);
+
+  const dismissNotification = useCallback((notifId) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== notifId));
+  }, []);
 
   const updateEmail = useCallback(
     (emailId, updates) =>
@@ -240,6 +294,8 @@ export const StoreProvider = ({ children }) => {
       toggleLabel,
       createLabel,
       emptyTrash,
+      notifications,
+      dismissNotification,
     }),
     [
       state,
@@ -271,6 +327,8 @@ export const StoreProvider = ({ children }) => {
       toggleLabel,
       createLabel,
       emptyTrash,
+      notifications,
+      dismissNotification,
     ]
   );
 

@@ -35,6 +35,7 @@ _timers: Dict[str, List[asyncio.Task]] = {}
 _actions: Dict[str, List[Dict[str, Any]]] = {}
 _fired: Dict[str, Set[int]] = {}
 _start_ts: Dict[str, float] = {}
+_notif_enabled: Dict[str, bool] = {}   # per-user notification toggle
 
 # back-reference so timer tasks can mutate state
 _store_ref: Any = None  # will be set to the StateStore instance
@@ -101,10 +102,11 @@ def _email_matches_trigger(email_data: Dict[str, Any], trigger: Dict[str, Any]) 
 # ── lifecycle hooks ─────────────────────────────────────────────────────
 
 def extract_dynamic_fields(data: Dict[str, Any]) -> tuple:
-    """Pop time_data and action_data from *data* (in-place) and return them."""
+    """Pop time_data, action_data and enable_notifications from *data* (in-place)."""
     time_data = data.pop("time_data", None) or []
     action_data = data.pop("action_data", None) or []
-    return time_data, action_data
+    enable_notif = str(data.pop("enable_notifications", "")).lower() == "on"
+    return time_data, action_data, enable_notif
 
 
 async def _deliver_timed_email(user_id: str, email: Dict[str, Any], delay: float) -> None:
@@ -139,12 +141,18 @@ async def _deliver_timed_email(user_id: str, email: Dict[str, Any], delay: float
     await _store_ref.update_state(user_id, updater)
 
 
-def start_dynamic_events(user_id: str, time_data: List[Dict], action_data: List[Dict]) -> None:
+def is_notifications_enabled(user_id: str) -> bool:
+    """Return whether notifications are enabled for *user_id*."""
+    return _notif_enabled.get(user_id, False)
+
+
+def start_dynamic_events(user_id: str, time_data: List[Dict], action_data: List[Dict], enable_notifications: bool = False) -> None:
     """Start background tasks for timed emails; register action rules."""
     cancel_dynamic_events(user_id)
 
     _start_ts[user_id] = time.monotonic()
     _fired[user_id] = set()
+    _notif_enabled[user_id] = enable_notifications
 
     # ── schedule timed emails ──
     tasks: List[asyncio.Task] = []
@@ -171,6 +179,7 @@ def cancel_dynamic_events(user_id: str) -> None:
     _actions.pop(user_id, None)
     _fired.pop(user_id, None)
     _start_ts.pop(user_id, None)
+    _notif_enabled.pop(user_id, None)
 
 
 async def check_action_triggers(user_id: str, outgoing_email: Dict[str, Any]) -> None:

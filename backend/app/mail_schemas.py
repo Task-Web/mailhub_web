@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class MailStateResponse(BaseModel):
     user_id: str
     mail: Dict[str, Any]
+    enable_notifications: bool = False
 
 
 class MailSendRequest(BaseModel):

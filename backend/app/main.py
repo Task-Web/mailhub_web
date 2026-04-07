@@ -229,13 +229,13 @@ async def get_state(user_id: str = Depends(get_user_id)) -> StateResponse:
     summary="Replace state",
 )
 async def put_state(payload: StateRequest, user_id: str = Depends(get_user_id)) -> StateResponse:
-    time_data, action_data = dynamic_events.extract_dynamic_fields(payload.data)
+    time_data, action_data, enable_notif = dynamic_events.extract_dynamic_fields(payload.data)
     next_state = {"data": payload.data, "note": payload.note}
     if payload.meta is not None:
         next_state["meta"] = payload.meta
     state = await store.replace_state(user_id, next_state)
     if time_data or action_data:
-        dynamic_events.start_dynamic_events(user_id, time_data, action_data)
+        dynamic_events.start_dynamic_events(user_id, time_data, action_data, enable_notif)
     return StateResponse(user_id=user_id, state=state)
 
 
@@ -278,7 +278,11 @@ async def get_mail_state(user_id: str = Depends(get_user_id)) -> MailStateRespon
         return changed
 
     state = await store.update_state(user_id, updater)
-    return MailStateResponse(user_id=user_id, mail=state.data)
+    return MailStateResponse(
+        user_id=user_id,
+        mail=state.data,
+        enable_notifications=dynamic_events.is_notifications_enabled(user_id),
+    )
 
 
 @app.post(
@@ -721,10 +725,10 @@ async def mcp_replace_state(
     user_cookie: Optional[str] = None,
 ) -> Dict[str, Any]:
     user_id = _resolve_user_cookie(user_cookie)
-    time_data, action_data = dynamic_events.extract_dynamic_fields(data)
+    time_data, action_data, enable_notif = dynamic_events.extract_dynamic_fields(data)
     state = await store.replace_state(user_id, {"data": data, "note": note})
     if time_data or action_data:
-        dynamic_events.start_dynamic_events(user_id, time_data, action_data)
+        dynamic_events.start_dynamic_events(user_id, time_data, action_data, enable_notif)
     return {"user_id": user_id, "state": state.model_dump()}
 
 
