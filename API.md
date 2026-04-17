@@ -61,6 +61,9 @@ http DELETE :8000/api/state
 ## Mail
 Mail endpoints operate on the `data` envelope and return `{ "user_id": "...", "mail": { ... } }`.
 
+Email objects in mail responses may include an optional `bodyFormat` field (`text`, `html`, or `markdown`).
+If it is absent, the frontend infers the rendering mode for older states.
+
 - `GET /mail/state` — fetch mail state for this cookie.
 - `POST /mail/send` — send a new message.
   - Body: `{ "to": "...", "cc": "...", "bcc": "...", "subject": "...", "body": "...", "attachments": [], "draft_id": "optional" }`

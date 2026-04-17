@@ -1,4 +1,5 @@
 import hashlib
+import html
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -13,6 +14,23 @@ DEFAULT_LABELS = [
 ]
 
 _TAG_RE = re.compile(r"<[^>]+>")
+_KNOWN_HTML_TAG_RE = re.compile(
+    r"<(?:!doctype|/?(?:a|article|aside|b|blockquote|body|br|code|del|details|div|em|figcaption|figure|footer|h[1-6]|head|header|hr|html|i|iframe|img|li|main|nav|ol|p|pre|section|span|strong|style|summary|table|tbody|td|th|thead|tr|u|ul)\b)",
+    re.IGNORECASE,
+)
+
+_BODY_FORMAT_ALIASES = {
+    "html": "html",
+    "text/html": "html",
+    "text": "text",
+    "plain": "text",
+    "plaintext": "text",
+    "plain-text": "text",
+    "text/plain": "text",
+    "markdown": "markdown",
+    "md": "markdown",
+    "text/markdown": "markdown",
+}
 
 
 def _seed_from_user_id(user_id: str) -> int:
@@ -96,6 +114,38 @@ def normalize_attachments(value: Any) -> List[Dict[str, Any]]:
     return attachments
 
 
+def normalize_body_format(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    return _BODY_FORMAT_ALIASES.get(value.strip().lower())
+
+
+def body_looks_like_html(body: Any) -> bool:
+    if not isinstance(body, str) or not body:
+        return False
+    return bool(_KNOWN_HTML_TAG_RE.search(body))
+
+
+def infer_body_format(body: Any, body_format: Optional[str] = None) -> str:
+    normalized = normalize_body_format(body_format)
+    if normalized:
+        return normalized
+    return "html" if body_looks_like_html(body) else "text"
+
+
+def text_to_html_fragment(body: Any) -> str:
+    normalized = str(body or "").replace("\r\n", "\n").replace("\r", "\n")
+    escaped = html.escape(normalized)
+    return escaped.replace("\n", "<br>")
+
+
+def body_to_html_fragment(body: Any, body_format: Optional[str] = None) -> str:
+    resolved = infer_body_format(body, body_format)
+    if resolved == "html":
+        return str(body or "")
+    return text_to_html_fragment(body)
+
+
 def build_email(
     *,
     email_id: str,
@@ -114,9 +164,11 @@ def build_email(
     category: str = "primary",
     folder: str = "inbox",
     attachments: Optional[List[Dict[str, Any]]] = None,
+    body_format: Optional[str] = None,
 ) -> Dict[str, Any]:
     created_at = timestamp or datetime.now(timezone.utc)
     email_body = body or ""
+    resolved_body_format = infer_body_format(email_body, body_format)
     return {
         "id": email_id,
         "threadId": thread_id,
@@ -126,6 +178,7 @@ def build_email(
         "bcc": bcc or [],
         "subject": subject or "(no subject)",
         "body": email_body,
+        "bodyFormat": resolved_body_format,
         "snippet": build_snippet(email_body),
         "timestamp": created_at.isoformat(),
         "read": read,
@@ -452,6 +505,7 @@ def build_outgoing_email(
         category="primary",
         folder=payload.get("folder") or "sent",
         attachments=attachments,
+        body_format="text",
     )
 
 
@@ -477,14 +531,22 @@ def _build_body_with_quote(body: str, source_email: Dict[str, Any]) -> str:
         timestamp = dt.strftime("%a, %b %d, %Y at %I:%M %p")
     except (ValueError, TypeError):
         timestamp = raw_ts
-    source_body = _strip_existing_quote(source_email.get("body") or "")
+    reply_body = text_to_html_fragment(body)
+    source_body = source_email.get("body") or ""
+    source_body_format = source_email.get("bodyFormat")
+    if infer_body_format(source_body, source_body_format) == "html":
+        source_body = _strip_existing_quote(source_body)
+    source_body = body_to_html_fragment(source_body, source_body_format)
 
     if not source_body:
-        return body
+        return reply_body
+
+    quote_prefix = "<br><br>" if reply_body else ""
 
     return (
-        f"{body}"
-        f'<br><div class="gmail_quote">'
+        f"{reply_body}"
+        f"{quote_prefix}"
+        f'<div class="gmail_quote">'
         f"<details>"
         f'<summary style="cursor:pointer;list-style:none;display:inline-block;'
         f'margin:4px 0 8px;user-select:none">'
@@ -545,4 +607,5 @@ def build_reply_email(
         category="primary",
         folder="sent",
         attachments=normalize_attachments(attachments),
+        body_format="html",
     )

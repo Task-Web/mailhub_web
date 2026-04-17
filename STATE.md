@@ -34,7 +34,8 @@ The backend initializes `data` with mail state:
 - `cc` (Contact[])
 - `bcc` (Contact[])
 - `subject` (string)
-- `body` (string): HTML allowed.
+- `body` (string): Email body content.
+- `bodyFormat` (string, optional): `text`, `html`, or `markdown`. If omitted, the frontend falls back to content sniffing for backward compatibility.
 - `snippet` (string): Text preview.
 - `timestamp` (string): ISO timestamp.
 - `read` (boolean)

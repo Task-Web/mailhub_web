@@ -17,6 +17,32 @@ import { api } from "../apiClient";
 import { useStore } from "../context/StoreContext";
 import { cn, formatDate } from "../lib/utils";
 
+const BODY_FORMAT_ALIASES = {
+  html: "html",
+  "text/html": "html",
+  text: "text",
+  plain: "text",
+  plaintext: "text",
+  "plain-text": "text",
+  "text/plain": "text",
+  markdown: "markdown",
+  md: "markdown",
+  "text/markdown": "markdown",
+};
+
+const KNOWN_HTML_TAG_RE =
+  /<(?:!doctype|\/?(?:a|article|aside|b|blockquote|body|br|code|del|details|div|em|figcaption|figure|footer|h[1-6]|head|header|hr|html|i|iframe|img|li|main|nav|ol|p|pre|section|span|strong|style|summary|table|tbody|td|th|thead|tr|u|ul)\b)/i;
+
+const normalizeBodyFormat = (bodyFormat) => {
+  if (!bodyFormat || typeof bodyFormat !== "string") return null;
+  return BODY_FORMAT_ALIASES[bodyFormat.trim().toLowerCase()] || null;
+};
+
+const bodyLooksLikeHtml = (body) => {
+  if (!body || typeof body !== "string") return false;
+  return KNOWN_HTML_TAG_RE.test(body);
+};
+
 const isImageAttachment = (attachment) => {
   const type = (attachment?.type || "").toLowerCase();
   if (!type) return false;
@@ -194,12 +220,21 @@ const triggerDownload = (url, filename) => {
   link.remove();
 };
 
-const EmailBody = ({ html }) => {
+export const EmailBody = ({ body, bodyFormat }) => {
   const iframeRef = useRef(null);
   const [height, setHeight] = useState("0px");
-  const srcDoc = useMemo(() => buildEmailDocument(html), [html]);
+  const resolvedBodyFormat = useMemo(() => {
+    const normalized = normalizeBodyFormat(bodyFormat);
+    if (normalized) return normalized;
+    return bodyLooksLikeHtml(body) ? "html" : "text";
+  }, [body, bodyFormat]);
+  const srcDoc = useMemo(
+    () => (resolvedBodyFormat === "html" ? buildEmailDocument(body) : ""),
+    [body, resolvedBodyFormat]
+  );
 
   const resizeIframe = useCallback(() => {
+    if (resolvedBodyFormat !== "html") return;
     const iframe = iframeRef.current;
     if (!iframe) return;
     try {
@@ -220,13 +255,15 @@ const EmailBody = ({ html }) => {
     } catch (err) {
       // Ignore cross-origin access errors (should not happen with srcdoc).
     }
-  }, []);
+  }, [resolvedBodyFormat]);
 
   useEffect(() => {
+    if (resolvedBodyFormat !== "html") return;
     resizeIframe();
-  }, [srcDoc, resizeIframe]);
+  }, [resolvedBodyFormat, srcDoc, resizeIframe]);
 
   const handleLoad = useCallback(() => {
+    if (resolvedBodyFormat !== "html") return;
     resizeIframe();
     const iframe = iframeRef.current;
     if (!iframe) return;
@@ -240,7 +277,15 @@ const EmailBody = ({ html }) => {
     } catch (err) {
       // Ignore cross-origin access errors.
     }
-  }, [resizeIframe]);
+  }, [resolvedBodyFormat, resizeIframe]);
+
+  if (resolvedBodyFormat !== "html") {
+    return (
+      <div className="whitespace-pre-wrap break-words text-[15px] leading-7 text-gray-800">
+        {body || ""}
+      </div>
+    );
+  }
 
   return (
     <iframe
@@ -541,7 +586,7 @@ const ThreadView = () => {
                 {isExpanded && (
                   <>
                     <div className="px-16 pb-8">
-                      <EmailBody html={email.body} />
+                      <EmailBody body={email.body} bodyFormat={email.bodyFormat} />
                     </div>
 
                     {email.attachments && email.attachments.length > 0 && (
