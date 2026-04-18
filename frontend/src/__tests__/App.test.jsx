@@ -44,10 +44,12 @@ describe("App", () => {
   };
 
   beforeEach(() => {
+    window.location.hash = "";
     global.fetch = vi.fn(async () => buildResponse(mailPayload));
   });
 
   afterEach(() => {
+    window.location.hash = "";
     vi.restoreAllMocks();
   });
 
@@ -60,5 +62,14 @@ describe("App", () => {
   it("shows inbox emails from the backend", async () => {
     render(<App />);
     expect(await screen.findByText("Welcome to the demo")).toBeInTheDocument();
+  });
+
+  it("shows the sender email address in thread view", async () => {
+    window.location.hash = "#/email/t1";
+
+    render(<App />);
+
+    expect(await screen.findByText("Welcome to the demo")).toBeInTheDocument();
+    expect(screen.getByText(/<alice@example\.com>/)).toBeInTheDocument();
   });
 });

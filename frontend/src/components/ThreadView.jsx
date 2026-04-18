@@ -220,6 +220,23 @@ const triggerDownload = (url, filename) => {
   link.remove();
 };
 
+const getParticipantDisplay = (participant) => {
+  const name = typeof participant?.name === "string" ? participant.name.trim() : "";
+  const email = typeof participant?.email === "string" ? participant.email.trim() : "";
+
+  if (name && email && name.toLowerCase() !== email.toLowerCase()) {
+    return {
+      primary: name,
+      secondary: `<${email}>`,
+    };
+  }
+
+  return {
+    primary: name || email || "Unknown",
+    secondary: "",
+  };
+};
+
 export const EmailBody = ({ body, bodyFormat }) => {
   const iframeRef = useRef(null);
   const [height, setHeight] = useState("0px");
@@ -527,6 +544,8 @@ const ThreadView = () => {
         <div className="space-y-4">
           {threadEmails.map((email, index) => {
             const isExpanded = expandedEmails.has(email.id);
+            const senderDisplay = getParticipantDisplay(email.from);
+            const senderTitle = [senderDisplay.primary, senderDisplay.secondary].filter(Boolean).join(" ");
             return (
               <div
                 key={email.id}
@@ -542,7 +561,17 @@ const ThreadView = () => {
                   <img src={email.from.avatar} alt="" className="h-10 w-10 rounded-full" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-gray-900">{email.from.name}</span>
+                      <div
+                        className="flex min-w-0 items-baseline gap-1.5"
+                        title={senderTitle}
+                      >
+                        <span className="truncate font-bold text-gray-900">{senderDisplay.primary}</span>
+                        {senderDisplay.secondary ? (
+                          <span className="truncate text-sm font-normal text-gray-500">
+                            {senderDisplay.secondary}
+                          </span>
+                        ) : null}
+                      </div>
                       <div className="flex items-center gap-4 text-sm text-gray-500">
                         <span>{formatDate(email.timestamp)}</span>
                         {isExpanded && (
