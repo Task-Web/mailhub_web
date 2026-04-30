@@ -131,8 +131,8 @@ const ComposeModal = () => {
   };
 
   const modalClasses = isMaximized
-    ? "fixed inset-4 z-50 flex flex-col rounded-lg bg-white shadow-2xl relative"
-    : `fixed bottom-0 right-20 z-50 flex flex-col rounded-t-lg border border-gray-300 bg-white shadow-xl transition-all duration-200 relative ${
+    ? "fixed inset-4 z-50 flex flex-col rounded-lg bg-white shadow-2xl"
+    : `fixed bottom-0 right-20 z-50 flex flex-col rounded-t-lg border border-gray-300 bg-white shadow-xl transition-all duration-200 ${
         isMinimized ? "h-12 w-64" : "h-[500px] w-[500px]"
       }`;
 
@@ -146,14 +146,26 @@ const ComposeModal = () => {
     >
       <div
         className="flex cursor-pointer select-none items-center justify-between rounded-t-lg bg-[#f2f6fc] px-4 py-2"
-        onClick={() => !isMaximized && setIsMinimized(!isMinimized)}
+        onClick={() => {
+          if (isMaximized) {
+            setIsMaximized(false);
+            setIsMinimized(true);
+          } else {
+            setIsMinimized(!isMinimized);
+          }
+        }}
       >
         <span className="text-sm font-medium text-gray-700">New Message</span>
         <div className="flex items-center gap-2">
           <button
             onClick={(event) => {
               event.stopPropagation();
-              setIsMinimized(!isMinimized);
+              if (isMaximized) {
+                setIsMaximized(false);
+                setIsMinimized(true);
+              } else {
+                setIsMinimized(!isMinimized);
+              }
             }}
             className="rounded p-1 hover:bg-gray-200"
           >
