@@ -6,7 +6,6 @@ import {
   CornerUpLeft,
   FileText,
   Mail,
-  MoreVertical,
   Paperclip,
   Reply,
   Star,
@@ -595,7 +594,6 @@ const ThreadView = () => {
                             >
                               <CornerUpLeft size={18} />
                             </button>
-                            <MoreVertical size={18} />
                           </>
                         )}
                       </div>

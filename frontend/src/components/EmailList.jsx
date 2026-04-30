@@ -5,7 +5,6 @@ import {
   CheckSquare,
   Inbox,
   Mail,
-  MoreVertical,
   Square,
   Star,
   Tag,
@@ -324,11 +323,7 @@ const EmailList = ({ folder = "inbox" }) => {
               )}
             </div>
           </div>
-        ) : (
-          <button className="rounded p-2 text-gray-600 hover:bg-gray-100">
-            <MoreVertical size={18} />
-          </button>
-        )}
+        ) : null}
 
         {folder === "trash" && (
           <button

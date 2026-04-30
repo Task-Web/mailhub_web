@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Grid, HelpCircle, Menu, Search, Settings, SlidersHorizontal, X } from "lucide-react";
+import { Search, SlidersHorizontal, X } from "lucide-react";
 import { useStore } from "../context/StoreContext";
 
 const AdvancedSearchModal = () => {
@@ -84,10 +84,7 @@ const Header = () => {
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-gray-200 bg-white px-4">
       <div className="flex w-60 items-center gap-4">
-        <button className="rounded-full p-2 hover:bg-gray-100">
-          <Menu size={24} className="text-gray-600" />
-        </button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 pl-2">
           <span className="text-xl font-semibold text-mailhub-text">MailHub</span>
         </div>
       </div>
@@ -124,15 +121,6 @@ const Header = () => {
       <div className="flex w-60 items-center justify-end gap-2">
         {error && <span className="text-xs text-red-600">Sync issue</span>}
         {!error && isSyncing && <span className="text-xs text-gray-500">Syncing...</span>}
-        <button className="rounded-full p-2 hover:bg-gray-100">
-          <HelpCircle size={24} className="text-gray-600" />
-        </button>
-        <button className="rounded-full p-2 hover:bg-gray-100">
-          <Settings size={24} className="text-gray-600" />
-        </button>
-        <button className="rounded-full p-2 hover:bg-gray-100">
-          <Grid size={24} className="text-gray-600" />
-        </button>
         <div className="ml-2">
           <img
             src={state.user.avatar}
