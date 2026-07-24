@@ -1,6 +1,10 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class MailRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
 class MailStateResponse(BaseModel):
@@ -9,59 +13,83 @@ class MailStateResponse(BaseModel):
     enable_notifications: bool = False
 
 
-class MailSendRequest(BaseModel):
+class MailAttachment(MailRequest):
+    id: str
+    name: str
+    size: str
+    type: str
+    url: str
+    filename: str
+
+
+class MailSendRequest(MailRequest):
     to: str
     cc: Optional[str] = ""
     bcc: Optional[str] = ""
     subject: Optional[str] = ""
     body: Optional[str] = ""
-    attachments: List[Dict[str, Any]] = Field(default_factory=list)
+    attachments: List[MailAttachment] = Field(default_factory=list)
     draft_id: Optional[str] = None
 
 
-class MailReplyRequest(BaseModel):
+class MailReplyRequest(MailRequest):
     thread_id: str
     body: str
     reply_all: bool = False
     reply_to_id: Optional[str] = None
-    attachments: List[Dict[str, Any]] = Field(default_factory=list)
+    attachments: List[MailAttachment] = Field(default_factory=list)
 
 
-class MailDraftRequest(BaseModel):
+class MailDraftRequest(MailRequest):
     draft_id: Optional[str] = None
     to: Optional[str] = ""
     cc: Optional[str] = ""
     bcc: Optional[str] = ""
     subject: Optional[str] = ""
     body: Optional[str] = ""
-    attachments: List[Dict[str, Any]] = Field(default_factory=list)
+    attachments: List[MailAttachment] = Field(default_factory=list)
 
 
 class MailDraftResponse(MailStateResponse):
     draft_id: Optional[str] = None
 
 
-class MailUpdateRequest(BaseModel):
-    updates: Dict[str, Any] = Field(default_factory=dict)
+class MailEmailUpdates(MailRequest):
+    read: Optional[bool] = None
+    starred: Optional[bool] = None
+    important: Optional[bool] = None
+    folder: Optional[Literal["inbox", "sent", "drafts", "trash", "all-mail", "spam"]] = None
+    labels: Optional[List[str]] = None
+    category: Optional[Literal["primary", "social", "promotions", "updates"]] = None
+
+    @model_validator(mode="after")
+    def require_update(self):
+        if not self.model_fields_set:
+            raise ValueError("At least one email update is required")
+        return self
 
 
-class MailBulkUpdateRequest(BaseModel):
-    email_ids: List[str]
-    updates: Dict[str, Any] = Field(default_factory=dict)
+class MailUpdateRequest(MailRequest):
+    updates: MailEmailUpdates
 
 
-class MailEmailIdsRequest(BaseModel):
-    email_ids: List[str]
+class MailBulkUpdateRequest(MailRequest):
+    email_ids: List[str] = Field(min_length=1)
+    updates: MailEmailUpdates
 
 
-class MailLabelRequest(BaseModel):
+class MailEmailIdsRequest(MailRequest):
+    email_ids: List[str] = Field(min_length=1)
+
+
+class MailLabelRequest(MailRequest):
     name: str
     color: Optional[str] = "#9ca3af"
 
 
-class MailLabelToggleRequest(BaseModel):
+class MailLabelToggleRequest(MailRequest):
     label_id: str
-    action: str = "toggle"
+    action: Literal["add", "remove", "toggle"] = "toggle"
 
 
 class MailLabelResponse(MailStateResponse):

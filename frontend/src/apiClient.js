@@ -26,12 +26,6 @@ async function request(path, options = {}) {
 
 export const api = {
   baseUrl: API_BASE,
-  getState: () => request("/state"),
-  replaceState: (data, note, meta) =>
-    request("/state", { method: "PUT", body: JSON.stringify({ data, note, meta }) }),
-  patchState: (data, note) =>
-    request("/state", { method: "PATCH", body: JSON.stringify({ data, note }) }),
-  resetState: () => request("/state", { method: "DELETE" }),
   getInfo: () => request("/info"),
   getMailState: () => request("/mail/state"),
   sendMail: (payload) => request("/mail/send", { method: "POST", body: JSON.stringify(payload) }),

@@ -60,7 +60,6 @@ store = StateStore()
 dynamic_events.set_store(store)
 
 tags_metadata = [
-    {"name": "state", "description": "Manage per-user experiment state"},
     {"name": "mail", "description": "Mail UI data and actions"},
     {"name": "files", "description": "User-scoped file uploads"},
     {"name": "system", "description": "Environment and health information"},
@@ -87,6 +86,33 @@ def build_file_metadata(
         url=build_file_url(filename),
         filename=filename,
     )
+
+
+MAIL_PRODUCT_KEYS = ("user", "emails", "labels", "drafts")
+
+
+def _mail_projection(data: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: data.get(key) for key in MAIL_PRODUCT_KEYS}
+
+
+def _validate_mail_attachments(user_id: str, attachments: List[Any]) -> List[Dict[str, Any]]:
+    validated: List[Dict[str, Any]] = []
+    for attachment in attachments:
+        submitted = attachment.model_dump()
+        path = resolve_user_file(user_id, submitted["filename"])
+        if path is None:
+            raise HTTPException(status_code=404, detail="Attachment not found")
+        expected = build_file_metadata(
+            file_id=split_file_id(path.name),
+            filename=path.name,
+            name=split_stored_name(path.name),
+            size_bytes=path.stat().st_size,
+            content_type=guess_mime_type(path),
+        ).model_dump()
+        if submitted != expected:
+            raise HTTPException(status_code=422, detail="Attachment metadata does not match upload")
+        validated.append(expected)
+    return validated
 
 
 def _is_http_url(value: str) -> bool:
@@ -190,13 +216,6 @@ async def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/state-doc", tags=["system"])
-async def state_doc():
-    from pathlib import Path
-    content = Path("/app/STATE.md").read_text(encoding="utf-8")
-    return Response(content=content, media_type="text/plain; charset=utf-8")
-
-
 @app.get(
     f"{settings.api_prefix}/proxy",
     tags=["system"],
@@ -223,7 +242,12 @@ async def proxy_asset(url: str) -> Response:
     return response
 
 # when build on the basesite, the below endpoints about state management should remain unchanged
-@app.get(f"{settings.api_prefix}/state", response_model=StateResponse, tags=["state"])
+@app.get(
+    f"{settings.api_prefix}/state",
+    response_model=StateResponse,
+    tags=["state"],
+    include_in_schema=False,
+)
 async def get_state(user_id: str = Depends(get_user_id)) -> StateResponse:
     state = await store.get_state(user_id)
     return StateResponse(user_id=user_id, state=state)
@@ -234,6 +258,7 @@ async def get_state(user_id: str = Depends(get_user_id)) -> StateResponse:
     response_model=StateResponse,
     tags=["state"],
     summary="Replace state",
+    include_in_schema=False,
 )
 async def put_state(payload: StateRequest, user_id: str = Depends(get_user_id)) -> StateResponse:
     time_data, action_data, enable_notif = dynamic_events.extract_dynamic_fields(payload.data)
@@ -251,6 +276,7 @@ async def put_state(payload: StateRequest, user_id: str = Depends(get_user_id)) 
     response_model=StateResponse,
     tags=["state"],
     summary="Merge into existing state",
+    include_in_schema=False,
 )
 async def patch_state(
     payload: StatePatchRequest, user_id: str = Depends(get_user_id)
@@ -264,6 +290,7 @@ async def patch_state(
     response_model=StateResponse,
     tags=["state"],
     summary="Reset and clear state",
+    include_in_schema=False,
 )
 async def delete_state(user_id: str = Depends(get_user_id)) -> StateResponse:
     state = await store.reset_state(user_id)
@@ -287,7 +314,7 @@ async def get_mail_state(user_id: str = Depends(get_user_id)) -> MailStateRespon
     state = await store.update_state(user_id, updater)
     return MailStateResponse(
         user_id=user_id,
-        mail=state.data,
+        mail=_mail_projection(state.data),
         enable_notifications=dynamic_events.is_notifications_enabled(user_id),
     )
 
@@ -300,10 +327,12 @@ async def get_mail_state(user_id: str = Depends(get_user_id)) -> MailStateRespon
 )
 async def send_mail(payload: MailSendRequest, user_id: str = Depends(get_user_id)) -> MailStateResponse:
     outgoing_ref: Dict[str, Any] = {}
+    request_data = payload.model_dump()
+    request_data["attachments"] = _validate_mail_attachments(user_id, payload.attachments)
 
     def updater(existing_state):
         mail_state, _ = ensure_mail_state(existing_state.data, user_id)
-        outgoing = build_outgoing_email(mail_state["user"], payload.model_dump())
+        outgoing = build_outgoing_email(mail_state["user"], request_data)
         outgoing_ref.update(outgoing)
         mail_state["emails"].insert(0, outgoing)
         if payload.draft_id:
@@ -316,7 +345,7 @@ async def send_mail(payload: MailSendRequest, user_id: str = Depends(get_user_id
 
     state = await store.update_state(user_id, updater)
     await dynamic_events.check_action_triggers(user_id, outgoing_ref)
-    return MailStateResponse(user_id=user_id, mail=state.data)
+    return MailStateResponse(user_id=user_id, mail=_mail_projection(state.data))
 
 
 @app.post(
@@ -327,6 +356,7 @@ async def send_mail(payload: MailSendRequest, user_id: str = Depends(get_user_id
 )
 async def reply_mail(payload: MailReplyRequest, user_id: str = Depends(get_user_id)) -> MailStateResponse:
     reply_ref: Dict[str, Any] = {}
+    attachments = _validate_mail_attachments(user_id, payload.attachments)
 
     def updater(existing_state):
         mail_state, _ = ensure_mail_state(existing_state.data, user_id)
@@ -353,7 +383,7 @@ async def reply_mail(payload: MailReplyRequest, user_id: str = Depends(get_user_
             source_email,
             payload.body,
             payload.reply_all,
-            payload.attachments,
+            attachments,
         )
         reply_ref.update(reply_email)
         mail_state["emails"].append(reply_email)
@@ -363,7 +393,7 @@ async def reply_mail(payload: MailReplyRequest, user_id: str = Depends(get_user_
 
     state = await store.update_state(user_id, updater)
     await dynamic_events.check_action_triggers(user_id, reply_ref)
-    return MailStateResponse(user_id=user_id, mail=state.data)
+    return MailStateResponse(user_id=user_id, mail=_mail_projection(state.data))
 
 
 @app.post(
@@ -374,6 +404,7 @@ async def reply_mail(payload: MailReplyRequest, user_id: str = Depends(get_user_
 )
 async def save_draft(payload: MailDraftRequest, user_id: str = Depends(get_user_id)) -> MailDraftResponse:
     draft_ref: Dict[str, Optional[str]] = {"id": payload.draft_id}
+    attachments = _validate_mail_attachments(user_id, payload.attachments)
 
     def updater(existing_state):
         mail_state, _ = ensure_mail_state(existing_state.data, user_id)
@@ -384,7 +415,7 @@ async def save_draft(payload: MailDraftRequest, user_id: str = Depends(get_user_
                 payload.bcc,
                 payload.subject,
                 payload.body,
-                payload.attachments,
+                attachments,
             ]
         )
 
@@ -397,7 +428,7 @@ async def save_draft(payload: MailDraftRequest, user_id: str = Depends(get_user_
                 existing["subject"] = payload.subject or "(no subject)"
                 existing["body"] = payload.body or ""
                 existing["snippet"] = build_snippet(existing["body"])
-                existing["attachments"] = normalize_attachments(payload.attachments)
+                existing["attachments"] = normalize_attachments(attachments)
                 existing["timestamp"] = datetime.now(timezone.utc).isoformat()
                 existing_state.data = mail_state
                 existing_state.note = "Mail: draft updated"
@@ -408,6 +439,7 @@ async def save_draft(payload: MailDraftRequest, user_id: str = Depends(get_user_
             return False
 
         draft_payload = payload.model_dump()
+        draft_payload["attachments"] = attachments
         draft_payload["folder"] = "drafts"
         new_draft = build_outgoing_email(mail_state["user"], draft_payload)
         new_draft["folder"] = "drafts"
@@ -418,7 +450,11 @@ async def save_draft(payload: MailDraftRequest, user_id: str = Depends(get_user_
         return True
 
     state = await store.update_state(user_id, updater)
-    return MailDraftResponse(user_id=user_id, mail=state.data, draft_id=draft_ref["id"])
+    return MailDraftResponse(
+        user_id=user_id,
+        mail=_mail_projection(state.data),
+        draft_id=draft_ref["id"],
+    )
 
 
 @app.delete(
@@ -441,7 +477,7 @@ async def delete_draft(draft_id: str, user_id: str = Depends(get_user_id)) -> Ma
         return True
 
     state = await store.update_state(user_id, updater)
-    return MailStateResponse(user_id=user_id, mail=state.data)
+    return MailStateResponse(user_id=user_id, mail=_mail_projection(state.data))
 
 
 @app.patch(
@@ -453,9 +489,13 @@ async def delete_draft(draft_id: str, user_id: str = Depends(get_user_id)) -> Ma
 async def update_email(
     email_id: str, payload: MailUpdateRequest, user_id: str = Depends(get_user_id)
 ) -> MailStateResponse:
+    updates = payload.updates.model_dump(exclude_none=True)
+
     def updater(existing_state):
         mail_state, _ = ensure_mail_state(existing_state.data, user_id)
-        changed = apply_bulk_update(mail_state["emails"], [email_id], payload.updates)
+        if find_email(mail_state["emails"], email_id) is None:
+            raise HTTPException(status_code=404, detail="Email not found")
+        changed = apply_bulk_update(mail_state["emails"], [email_id], updates)
         if not changed:
             return False
         existing_state.data = mail_state
@@ -463,7 +503,7 @@ async def update_email(
         return True
 
     state = await store.update_state(user_id, updater)
-    return MailStateResponse(user_id=user_id, mail=state.data)
+    return MailStateResponse(user_id=user_id, mail=_mail_projection(state.data))
 
 
 @app.post(
@@ -475,9 +515,14 @@ async def update_email(
 async def bulk_update_emails(
     payload: MailBulkUpdateRequest, user_id: str = Depends(get_user_id)
 ) -> MailStateResponse:
+    updates = payload.updates.model_dump(exclude_none=True)
+
     def updater(existing_state):
         mail_state, _ = ensure_mail_state(existing_state.data, user_id)
-        changed = apply_bulk_update(mail_state["emails"], payload.email_ids, payload.updates)
+        known_ids = {email.get("id") for email in mail_state["emails"]}
+        if any(email_id not in known_ids for email_id in payload.email_ids):
+            raise HTTPException(status_code=404, detail="Email not found")
+        changed = apply_bulk_update(mail_state["emails"], payload.email_ids, updates)
         if not changed:
             return False
         existing_state.data = mail_state
@@ -485,7 +530,7 @@ async def bulk_update_emails(
         return True
 
     state = await store.update_state(user_id, updater)
-    return MailStateResponse(user_id=user_id, mail=state.data)
+    return MailStateResponse(user_id=user_id, mail=_mail_projection(state.data))
 
 
 @app.post(
@@ -507,7 +552,7 @@ async def archive_emails(
         return True
 
     state = await store.update_state(user_id, updater)
-    return MailStateResponse(user_id=user_id, mail=state.data)
+    return MailStateResponse(user_id=user_id, mail=_mail_projection(state.data))
 
 
 @app.post(
@@ -529,7 +574,7 @@ async def delete_emails(
         return True
 
     state = await store.update_state(user_id, updater)
-    return MailStateResponse(user_id=user_id, mail=state.data)
+    return MailStateResponse(user_id=user_id, mail=_mail_projection(state.data))
 
 
 @app.post(
@@ -549,7 +594,7 @@ async def empty_trash(user_id: str = Depends(get_user_id)) -> MailStateResponse:
         return True
 
     state = await store.update_state(user_id, updater)
-    return MailStateResponse(user_id=user_id, mail=state.data)
+    return MailStateResponse(user_id=user_id, mail=_mail_projection(state.data))
 
 
 @app.post(
@@ -577,7 +622,11 @@ async def create_label(
         return True
 
     state = await store.update_state(user_id, updater)
-    return MailLabelResponse(user_id=user_id, mail=state.data, label=label_ref["label"])
+    return MailLabelResponse(
+        user_id=user_id,
+        mail=_mail_projection(state.data),
+        label=label_ref["label"],
+    )
 
 
 @app.post(
@@ -589,9 +638,6 @@ async def create_label(
 async def toggle_label(
     email_id: str, payload: MailLabelToggleRequest, user_id: str = Depends(get_user_id)
 ) -> MailStateResponse:
-    if payload.action not in {"add", "remove", "toggle"}:
-        raise HTTPException(status_code=400, detail="Invalid label action")
-
     def updater(existing_state):
         mail_state, _ = ensure_mail_state(existing_state.data, user_id)
         changed = apply_label_toggle(
@@ -604,7 +650,7 @@ async def toggle_label(
         return True
 
     state = await store.update_state(user_id, updater)
-    return MailStateResponse(user_id=user_id, mail=state.data)
+    return MailStateResponse(user_id=user_id, mail=_mail_projection(state.data))
 
 
 @app.post(
