@@ -27,7 +27,7 @@ async function request(path, options = {}) {
 export const api = {
   baseUrl: API_BASE,
   getInfo: () => request("/info"),
-  getMailState: () => request("/mail/state"),
+  getMailbox: () => request("/mail"),
   sendMail: (payload) => request("/mail/send", { method: "POST", body: JSON.stringify(payload) }),
   replyMail: (payload) => request("/mail/reply", { method: "POST", body: JSON.stringify(payload) }),
   saveDraft: (payload) => request("/mail/draft", { method: "POST", body: JSON.stringify(payload) }),

@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 
 const buildResponse = (data, status = 200) =>
@@ -45,7 +46,7 @@ describe("App", () => {
 
   beforeEach(() => {
     window.location.hash = "";
-    global.fetch = vi.fn(async () => buildResponse(mailPayload));
+    globalThis.fetch = vi.fn(async () => buildResponse(mailPayload));
   });
 
   afterEach(() => {
@@ -57,6 +58,10 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByText("Compose")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Search mail")).toBeInTheDocument();
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/mail",
+      expect.objectContaining({ credentials: "include" }),
+    );
   });
 
   it("shows inbox emails from the backend", async () => {

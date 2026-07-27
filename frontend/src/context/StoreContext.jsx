@@ -62,7 +62,7 @@ export const StoreProvider = ({ children }) => {
     setError(null);
     setIsLoading(true);
     try {
-      const response = await api.getMailState();
+      const response = await api.getMailbox();
       applyMailResponse(response);
     } catch (err) {
       setError(err.message || "Failed to load mail state");
@@ -80,7 +80,7 @@ export const StoreProvider = ({ children }) => {
     const interval = setInterval(async () => {
       if (!notificationsEnabled.current) return;
       try {
-        const response = await api.getMailState();
+        const response = await api.getMailbox();
         if (!response || !response.mail) return;
         const emails = response.mail.emails || [];
         const inboxEmails = emails.filter((e) => e.folder === "inbox");

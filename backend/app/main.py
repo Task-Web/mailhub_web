@@ -301,9 +301,16 @@ async def delete_state(user_id: str = Depends(get_user_id)) -> StateResponse:
     f"{settings.api_prefix}/mail/state",
     response_model=MailStateResponse,
     tags=["mail"],
-    summary="Fetch mail state",
+    summary="Fetch mailbox",
+    include_in_schema=False,
 )
-async def get_mail_state(user_id: str = Depends(get_user_id)) -> MailStateResponse:
+@app.get(
+    f"{settings.api_prefix}/mail",
+    response_model=MailStateResponse,
+    tags=["mail"],
+    summary="Fetch mailbox",
+)
+async def get_mailbox(user_id: str = Depends(get_user_id)) -> MailStateResponse:
     def updater(existing_state):
         mail_state, changed = ensure_mail_state(existing_state.data, user_id)
         if changed:

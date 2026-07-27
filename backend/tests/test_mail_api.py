@@ -5,17 +5,29 @@ import pytest
 async def test_control_plane_is_hidden_from_public_openapi(async_client):
     schema = (await async_client.get("/api/openapi.json")).json()
     assert "/api/state" not in schema["paths"]
+    assert "/api/mail/state" not in schema["paths"]
+    assert "/api/mail" in schema["paths"]
     assert all(tag.get("name") != "state" for tag in schema.get("tags", []))
 
 
 @pytest.mark.asyncio
-async def test_mail_state(async_client):
-    resp = await async_client.get("/api/mail/state")
+async def test_mailbox(async_client):
+    resp = await async_client.get("/api/mail")
     assert resp.status_code == 200
     body = resp.json()
     assert "mail" in body
     assert "emails" in body["mail"]
     assert "labels" in body["mail"]
+
+
+@pytest.mark.asyncio
+async def test_legacy_mail_state_route_remains_compatible(async_client):
+    current = await async_client.get("/api/mail")
+    legacy = await async_client.get("/api/mail/state")
+
+    assert legacy.status_code == 200
+    assert legacy.json()["user_id"] == current.json()["user_id"]
+    assert legacy.json()["mail"] == current.json()["mail"]
 
 
 @pytest.mark.asyncio
@@ -38,7 +50,7 @@ async def test_send_mail(async_client):
 
 @pytest.mark.asyncio
 async def test_reply_mail_preserves_multiline_reply_text(async_client):
-    state_resp = await async_client.get("/api/mail/state")
+    state_resp = await async_client.get("/api/mail")
     thread_id = state_resp.json()["mail"]["emails"][0]["threadId"]
 
     resp = await async_client.post(
@@ -129,27 +141,49 @@ async def test_mail_projection_hides_unrelated_control_fields(async_client):
     await async_client.put(
         "/api/state",
         params={"cookie": cookie},
-        json={"data": {"evaluator_marker": {"keep": True}}},
+        json={
+            "data": {
+                "evaluator_marker": {"keep": True},
+                "unrelated_top_level": {"hidden": True},
+                "developer_tools_open": False,
+            }
+        },
     )
 
-    response = await async_client.get("/api/mail/state", params={"cookie": cookie})
+    response = await async_client.get("/api/mail", params={"cookie": cookie})
 
     assert response.status_code == 200
+    assert set(response.json()) == {"user_id", "mail", "enable_notifications"}
     assert set(response.json()["mail"]) == {"user", "emails", "labels", "drafts"}
     assert "evaluator_marker" not in response.json()["mail"]
+    assert "unrelated_top_level" not in response.json()["mail"]
+    assert "developer_tools_open" not in response.json()["mail"]
     final = await async_client.get("/api/state", params={"cookie": cookie})
     assert final.json()["state"]["data"]["evaluator_marker"] == {"keep": True}
+    assert final.json()["state"]["data"]["unrelated_top_level"] == {"hidden": True}
 
 
 @pytest.mark.asyncio
 async def test_mail_updates_reject_arbitrary_and_internal_fields(async_client):
     cookie = "mail-strict-updates"
-    state = await async_client.get("/api/mail/state", params={"cookie": cookie})
+    await async_client.patch(
+        "/api/state",
+        params={"cookie": cookie},
+        json={
+            "data": {
+                "evaluator_marker": {"keep": True},
+                "unrelated_top_level": {"hidden": True},
+            }
+        },
+    )
+    state = await async_client.get("/api/mail", params={"cookie": cookie})
     email_id = state.json()["mail"]["emails"][0]["id"]
 
     for updates in (
         {"developer_tools_open": True},
         {"read": True, "subject": "forged"},
+        {"emails": []},
+        {"evaluator_marker": True},
         {"folder": "evaluator"},
     ):
         response = await async_client.patch(
@@ -158,6 +192,13 @@ async def test_mail_updates_reject_arbitrary_and_internal_fields(async_client):
             json={"updates": updates},
         )
         assert response.status_code == 422
+
+    full_state = await async_client.patch(
+        f"/api/mail/email/{email_id}",
+        params={"cookie": cookie},
+        json={"updates": {"read": True}, "state": {"data": {}}},
+    )
+    assert full_state.status_code == 422
 
     missing = await async_client.patch(
         "/api/mail/email/missing",
@@ -175,12 +216,15 @@ async def test_mail_updates_reject_arbitrary_and_internal_fields(async_client):
     assert next(
         email for email in updated.json()["mail"]["emails"] if email["id"] == email_id
     )["read"] is True
+    final = await async_client.get("/api/state", params={"cookie": cookie})
+    assert final.json()["state"]["data"]["evaluator_marker"] == {"keep": True}
+    assert final.json()["state"]["data"]["unrelated_top_level"] == {"hidden": True}
 
 
 @pytest.mark.asyncio
 async def test_mail_cookie_override_is_isolated(async_client):
-    source = await async_client.get("/api/mail/state", params={"cookie": "mail-a"})
-    other = await async_client.get("/api/mail/state", params={"cookie": "mail-b"})
+    source = await async_client.get("/api/mail", params={"cookie": "mail-a"})
+    other = await async_client.get("/api/mail", params={"cookie": "mail-b"})
     source_id = source.json()["mail"]["emails"][0]["id"]
     other_id = other.json()["mail"]["emails"][0]["id"]
 
@@ -191,7 +235,7 @@ async def test_mail_cookie_override_is_isolated(async_client):
     )
     assert response.status_code == 200
 
-    untouched = await async_client.get("/api/mail/state", params={"cookie": "mail-b"})
+    untouched = await async_client.get("/api/mail", params={"cookie": "mail-b"})
     assert next(
         email for email in untouched.json()["mail"]["emails"] if email["id"] == other_id
     )["starred"] == next(
