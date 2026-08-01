@@ -2,9 +2,8 @@ import os
 from functools import lru_cache
 from typing import List
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 from pydantic_settings import BaseSettings
-from pydantic import ConfigDict
 
 
 class Settings(BaseSettings):
@@ -19,6 +18,9 @@ class Settings(BaseSettings):
     cors_origins: List[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     debug: bool = False
     files_dir: str = "files"
+    state_ttl_seconds: int = 12 * 60 * 60
+    state_max_entries: int = 1000
+    state_max_total_bytes: int = 1024 * 1024 * 1024
 
 
 @lru_cache

@@ -60,6 +60,9 @@ Open http://localhost (nginx reverse proxy). It routes `/api` and `/mcp` to the 
 - `CORS_ORIGINS` (JSON list, default `["http://localhost:5173"]`)
 - `DEBUG` (boolean)
 - `FILES_DIR` (default `files`, resolved relative to `backend/`)
+- `STATE_TTL_SECONDS` (idle TTL, default `43200` / 12 hours)
+- `STATE_MAX_ENTRIES` (default `1000`)
+- `STATE_MAX_TOTAL_BYTES` (serialized state budget, default `1073741824` / 1024 MiB)
 
 Set them in `backend/.env` (see `backend/.env.example`).
 

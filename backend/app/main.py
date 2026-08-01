@@ -13,8 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from mcp.server.fastmcp import FastMCP
 
+from . import dynamic_events
 from .config import Settings, get_settings
-from .file_schemas import FileListResponse, FileUploadResponse, FileMetadata
+from .file_schemas import FileListResponse, FileMetadata, FileUploadResponse
 from .file_store import (
     format_file_size,
     guess_mime_type,
@@ -53,10 +54,14 @@ from .mail_schemas import (
 )
 from .schemas import InfoResponse, StatePatchRequest, StateRequest, StateResponse
 from .state_store import StateStore
-from . import dynamic_events
 
 settings = get_settings()
-store = StateStore()
+store = StateStore(
+    ttl_seconds=settings.state_ttl_seconds,
+    max_entries=settings.state_max_entries,
+    max_total_bytes=settings.state_max_total_bytes,
+    on_evict=dynamic_events.cancel_dynamic_events,
+)
 dynamic_events.set_store(store)
 
 tags_metadata = [
@@ -162,6 +167,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        dynamic_events.shutdown_dynamic_events()
         await mcp_ctx.__aexit__(None, None, None)
 
 
@@ -266,7 +272,7 @@ async def put_state(payload: StateRequest, user_id: str = Depends(get_user_id)) 
     if payload.meta is not None:
         next_state["meta"] = payload.meta
     state = await store.replace_state(user_id, next_state)
-    if time_data or action_data:
+    if await store.contains_state(user_id):
         dynamic_events.start_dynamic_events(user_id, time_data, action_data, enable_notif)
     return StateResponse(user_id=user_id, state=state)
 
@@ -293,6 +299,7 @@ async def patch_state(
     include_in_schema=False,
 )
 async def delete_state(user_id: str = Depends(get_user_id)) -> StateResponse:
+    dynamic_events.cancel_dynamic_events(user_id)
     state = await store.reset_state(user_id)
     return StateResponse(user_id=user_id, state=state)
 
@@ -787,7 +794,7 @@ async def mcp_replace_state(
     user_id = _resolve_user_cookie(user_cookie)
     time_data, action_data, enable_notif = dynamic_events.extract_dynamic_fields(data)
     state = await store.replace_state(user_id, {"data": data, "note": note})
-    if time_data or action_data:
+    if await store.contains_state(user_id):
         dynamic_events.start_dynamic_events(user_id, time_data, action_data, enable_notif)
     return {"user_id": user_id, "state": state.model_dump()}
 
@@ -812,6 +819,7 @@ async def mcp_patch_state(
 )
 async def mcp_reset_state(user_cookie: Optional[str] = None) -> Dict[str, Any]:
     user_id = _resolve_user_cookie(user_cookie)
+    dynamic_events.cancel_dynamic_events(user_id)
     state = await store.reset_state(user_id)
     return {"user_id": user_id, "state": state.model_dump()}
 
