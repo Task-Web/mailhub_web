@@ -98,7 +98,8 @@ def save_upload(user_id: str, upload: UploadFile) -> Dict[str, Any]:
     with destination.open("wb") as buffer:
         shutil.copyfileobj(upload.file, buffer)
     size_bytes = destination.stat().st_size
-    content_type = upload.content_type or guess_mime_type(destination)
+    # Match file listing, downloads, and mail attachment validation.
+    content_type = guess_mime_type(destination)
     return {
         "id": file_id,
         "filename": stored_name,
